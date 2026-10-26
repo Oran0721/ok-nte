@@ -34,6 +34,20 @@ def _install_pyappify_update_check_patch():
     MainWindow._schedule_update_check = _schedule_update_check_if_supported
 
 
+def _install_process_output_patch():
+    import ok.util.process as ok_process
+
+    original_build_cmd = ok_process._build_windows_start_command
+
+    def _build_silent_windows_start_command(game_cmd: str, game_path: str, arguments=None):
+        cmd = original_build_cmd(game_cmd, game_path, arguments)
+        if ">nul" not in cmd.lower():
+            cmd = f"{cmd} >nul 2>&1"
+        return cmd
+
+    ok_process._build_windows_start_command = _build_silent_windows_start_command
+
+
 def install_startup_patches(config):
     global _PATCH_INSTALLED
     if _PATCH_INSTALLED:
@@ -47,6 +61,7 @@ def install_startup_patches(config):
     from src.patches.i18n_patch import install_i18n_patch
 
     install_i18n_patch()
+    _install_process_output_patch()
     if ui_mode == "qt":
         _install_pyappify_update_check_patch()
     # if ui_mode == "qt":
