@@ -48,21 +48,24 @@ def _install_process_output_patch():
     ok_process._build_windows_start_command = _build_silent_windows_start_command
 
 
-def _install_quiet_window_poll_patch():
-    """屏蔽窗口尺寸轮询线程的 INFO 日志, 避免控制台被刷屏; WARNING 及以上保留。"""
+def _install_quiet_log_patch():
+    """屏蔽启动配置转储和窗口轮询的 INFO 日志, 避免控制台刷屏; WARNING 及以上保留。"""
     import logging
 
-    class _WindowPollLogFilter(logging.Filter):
+    class _QuietLogFilter(logging.Filter):
         def filter(self, record: logging.LogRecord) -> bool:
             if record.levelno >= logging.WARNING:
                 return True
             if record.threadName == "update_window_size":
                 return False
-            return not record.getMessage().startswith("hwnd_window:do_update_window_size")
+            message = record.getMessage()
+            if message.startswith("do_init, config:"):
+                return False
+            return not message.startswith("hwnd_window:do_update_window_size")
 
     ok_logger = logging.getLogger("ok")
-    if not any(isinstance(item, _WindowPollLogFilter) for item in ok_logger.filters):
-        ok_logger.addFilter(_WindowPollLogFilter())
+    if not any(isinstance(item, _QuietLogFilter) for item in ok_logger.filters):
+        ok_logger.addFilter(_QuietLogFilter())
 
 
 def install_startup_patches(config):
@@ -79,7 +82,7 @@ def install_startup_patches(config):
 
     install_i18n_patch()
     _install_process_output_patch()
-    _install_quiet_window_poll_patch()
+    _install_quiet_log_patch()
     if ui_mode == "qt":
         _install_pyappify_update_check_patch()
     # if ui_mode == "qt":
