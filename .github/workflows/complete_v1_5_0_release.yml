@@ -1,0 +1,154 @@
+name: Temporary Complete v1.5.0 Release
+'on':
+  workflow_dispatch: {}
+concurrency:
+  group: windows-release-refs/tags/v1.5.0
+  cancel-in-progress: false
+permissions:
+  contents: write
+env:
+  RELEASE_TAG: v1.5.0
+defaults:
+  run:
+    shell: pwsh
+jobs:
+  recover:
+    name: Complete existing v1.5.0 release
+    runs-on: windows-latest
+    steps:
+      - name: Check existing release
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |-
+          $ErrorActionPreference = 'Stop'
+          $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:RELEASE_TAG" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read the existing release.' }
+          if ($release.draft -or $release.immutable) { throw 'Recovery requires a published, mutable release.' }
+          $required = @(
+            "ok-nte-win-x86_64-$env:RELEASE_TAG-full.zip",
+            "ok-nte-win-x86_64-$env:RELEASE_TAG-body.zip",
+            'ok-nte-win32.zip'
+          )
+          foreach ($name in $required) {
+            $asset = @($release.assets | Where-Object { $_.name -eq $name -and $_.state -eq 'uploaded' -and $_.size -gt 0 })
+            if ($asset.Count -ne 1) { throw "Required existing asset is missing: $name" }
+          }
+          $version = $env:RELEASE_TAG -replace '^v', ''
+          $installers = @("ok-nte-win32-China-setup-$version.exe", "ok-nte-win32-online-setup-$version.exe")
+          $missing = @($installers | Where-Object { $_ -notin @($release.assets.name) })
+          "needs_setup=$($missing.Count -gt 0)".ToLowerInvariant() >> $env:GITHUB_OUTPUT
+          Write-Host "Missing installers: $($missing -join ', ')"
+      - name: Check out v1.5.0 source
+        if: steps.prepare.outputs.needs_setup == 'true'
+        uses: actions/checkout@v7
+        with:
+          ref: v1.5.0
+          persist-credentials: false
+      - name: Set up uv
+        if: steps.prepare.outputs.needs_setup == 'true'
+        uses: astral-sh/setup-uv@v7
+      - name: Build China installers only
+        if: steps.prepare.outputs.needs_setup == 'true'
+        run: |-
+          @'
+          from pathlib import Path
+          import yaml
+
+          config_path = Path("pyappify.yml")
+          config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+          config["profiles"] = [profile for profile in config["profiles"] if profile["name"] == "China"]
+          if not config["profiles"]:
+              raise RuntimeError("The release configuration has no China profile")
+          config_path.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
+          '@ | uv run --no-project --with pyyaml python -
+      - name: Package installers using the existing signed launcher
+        id: setup
+        if: steps.prepare.outputs.needs_setup == 'true'
+        uses: BnanZ0/pyappify-action@7a78359ae1cc69d7cabde949f21f6269dc7bee37
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          version: v1.2.6
+          app_version: v1.5.0
+          package_mode: setup
+          add_version_name: true
+          use_release: https://api.github.com/repos/BnanZ0/ok-nte/releases/tags/v1.5.0
+      - name: Save generated installers
+        if: always() && steps.prepare.outputs.needs_setup == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: recovered-v1.5.0-setups-${{ github.run_attempt }}
+          path: pyappify_dist/*setup-*.exe
+          if-no-files-found: ignore
+          retention-days: 3
+      - name: Upload missing installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |-
+          $ErrorActionPreference = 'Stop'
+          $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:RELEASE_TAG" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read the existing release.' }
+          $version = $env:RELEASE_TAG -replace '^v', ''
+          $installers = @("ok-nte-win32-China-setup-$version.exe", "ok-nte-win32-online-setup-$version.exe")
+          foreach ($name in $installers) {
+            if ($name -in @($release.assets.name)) {
+              Write-Host "Keeping existing installer: $name"
+              continue
+            }
+            $file = Join-Path 'pyappify_dist' $name
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Get-Item -LiteralPath $file).Length -eq 0) {
+              throw "Missing installer: $file"
+            }
+            gh release upload $env:RELEASE_TAG $file --repo $env:GITHUB_REPOSITORY
+            if ($LASTEXITCODE -ne 0) { throw "Installer upload failed: $name" }
+          }
+          $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:RELEASE_TAG" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot verify uploaded installers.' }
+          foreach ($name in $installers) {
+            if (@($release.assets | Where-Object { $_.name -eq $name -and $_.state -eq 'uploaded' -and $_.size -gt 0 }).Count -ne 1) {
+              throw "Uploaded installer verification failed: $name"
+            }
+          }
+      - name: Complete the existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_BODY: |
+            ### 更新日志
+            * ci(workflow): 为安装包文件名添加版本号 (RU)
+            * build: 更新发布版本配置至 v1.5.0 (RU)
+            * Revert update build.yml (RU)
+            * refactor(task): 移除废弃的 GoldenCrunchTask 任务 (RU)
+            * fix(stamina): 未识别已消耗体力时默认设为0 (RU)
+            * feat(char): 新增角色曳尔沐并优化角色调试工具 (RU)
+            * refactor: 调整界面坐标比率与任务处理逻辑 (RU)
+
+            ### 下载包说明
+            * [ok-nte-win32-China-setup-1.5.0.exe](https://github.com/BnanZ0/ok-nte/releases/download/v1.5.0/ok-nte-win32-China-setup-1.5.0.exe) 完整安装包, 更新使用阿里云+腾讯CNB.
+            * [ok-nte-win32-online-setup-1.5.0.exe](https://github.com/BnanZ0/ok-nte/releases/download/v1.5.0/ok-nte-win32-online-setup-1.5.0.exe) 在线安装包, 建议优先使用完整包.
+            * [ok-nte-win-x86_64-v1.5.0-full.zip](https://github.com/BnanZ0/ok-nte/releases/download/v1.5.0/ok-nte-win-x86_64-v1.5.0-full.zip) 完整便携压缩包, 包含启动器和程序本体, 使用 Mirror酱更新.
+            * [ok-nte-win-x86_64-v1.5.0-body.zip](https://github.com/BnanZ0/ok-nte/releases/download/v1.5.0/ok-nte-win-x86_64-v1.5.0-body.zip) 程序本体压缩包, 不含更新启动器.
+            * 不要下载 ok-nte-win32.zip 和 SourceCode.zip.
+
+            ### 其他下载源
+            * [Mirror酱下载渠道](https://mirrorchyan.com/zh/projects?rid=ok-nte-zip&channel=stable)
+            * [百度网盘](https://pan.baidu.com/s/102Mh1djq2B1T-cIJhct9Gg?pwd=okww)
+            * [夸克网盘](https://pan.quark.cn/s/24433f3febc1)
+        run: |-
+          $ErrorActionPreference = 'Stop'
+          $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:RELEASE_TAG" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read the existing release.' }
+          $payload = @{
+            body = $env:RELEASE_BODY
+            draft = $false
+            prerelease = $false
+            make_latest = 'true'
+          } | ConvertTo-Json
+          $payloadPath = Join-Path $env:RUNNER_TEMP 'complete-v1.5.0-release.json'
+          [IO.File]::WriteAllText($payloadPath, $payload, [Text.UTF8Encoding]::new($false))
+          $published = gh api --method PATCH "repos/$env:GITHUB_REPOSITORY/releases/$($release.id)" --input $payloadPath | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Release finalization failed.' }
+          if ($published.id -ne $release.id -or $published.tag_name -ne $env:RELEASE_TAG -or $published.draft -or $published.prerelease) {
+            throw 'Unexpected release state after finalization.'
+          }
+          Write-Host "Release completed: $($published.html_url)"
