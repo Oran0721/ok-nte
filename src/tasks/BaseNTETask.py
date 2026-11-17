@@ -1010,29 +1010,29 @@ class BaseNTETask(
         return "zh" in self.get_app_locale()
 
     def open_f1_domain(self):
-        def action():
-            self.openF1panel()
+        """打开 F1 面板的领域页。
 
-            box = self.box_of_screen(0.785, 0.022, 0.814, 0.076, name="stamina_icon")
-            feature = self.get_feature_by_name(Labels.f1_domain).mat
-            timer = self.clock.timer(timeout=5)
-            invert = False
-            while not timer.expired():
-                template = iu.binarize_bgr_by_brightness(feature, threshold=20, invert=invert)
-                if entry := self.find_one(
-                    Labels.f1_domain, template=template, box=self.pos.panels.f1.entry_area.to_box()
-                ):
-                    break
-                invert = not invert
-            else:
-                return False
-
-            self.operate_click(entry)
-            return self.wait_panel(Labels.stamina_icon, box=box)
-
+        上游改用 f1_domain 模板匹配定位入口, 但该特征未登记在
+        assets/coco_annotations.json, get_feature_by_name 返回 None 导致
+        AttributeError。这里恢复按固定坐标点击, 仅用 stamina_icon 确认面板已打开。
+        """
         return self.retry_on_action(
-            action=action, reset_action=self.ensure_main, raise_if_failed=True
+            action=self._open_f1_domain_once,
+            reset_action=self.ensure_main,
+            raise_if_failed=True,
         )
+
+    def _open_f1_domain_once(self):
+        self.openF1panel()
+
+        box = self.box_of_screen(0.785, 0.022, 0.814, 0.076, name="stamina_icon")
+        self.wait_until(
+            lambda: self.find_one(Labels.stamina_icon, box=box),
+            post_action=lambda: self.operate_click(*self.pos.panels.f1.domain.entry, interval=1),
+            settle_time=0.5,
+            time_out=10,
+        )
+        return self.wait_panel(Labels.stamina_icon, box=box)
 
     def _get_health_box(self, frame):
         box = self.is_in_team(frame=frame)
