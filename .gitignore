@@ -69,7 +69,9 @@ custom_chars/
 gift_configs/
 .vscode/
 ok_tasks/
-ok_import/
+ok_import/*
+!ok_import/auction_bid/
+!ok_import/tank_idle/
 temp_images/
 .ruff_cache
 site/
