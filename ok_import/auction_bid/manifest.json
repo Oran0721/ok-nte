@@ -1,0 +1,8 @@
+{
+  "file_name": "auction_bid",
+  "script_name": "自动拍卖",
+  "version": "1.0.0",
+  "tasks": [
+    ["shell", "AutoBidAuctionTask"]
+  ]
+}

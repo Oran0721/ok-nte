@@ -1,0 +1,11 @@
+{
+  "file_name": "tank_idle",
+  "script_name": "征途坦荡挂机",
+  "version": "1.0.1",
+  "tasks": [
+    [
+      "tank_idle",
+      "TankIdleTask"
+    ]
+  ]
+}
