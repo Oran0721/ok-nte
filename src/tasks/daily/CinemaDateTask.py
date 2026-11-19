@@ -156,25 +156,35 @@ class CinemaDateTask(NTEOneTimeTask, BaseNTETask):
             target_box = self._top_selectable_target()
         else:
             pages = 20
-            match = re.compile(target, re.IGNORECASE)
             snap_box = self.box_of_screen(0.7234, 0.5463, 0.7714, 0.8741)
+            # OCR 对角色名的识别可能截断或误读 (实测「明音凛」只读出「明音」,
+            # 「娜娜莉」误读为「那娜莉」), 严格全名正则会匹配失败。
+            # 改为容错匹配: 识别文本与目标名互相包含即视为命中。
+            target_text = target.strip()
+
+            def name_matches(text):
+                if not text:
+                    return False
+                name = re.sub(r"\s+", "", text)
+                return name in target_text or target_text in name
 
             for page in range(pages):
                 box = self.box_of_screen(0.772, 0.228, 0.914, 0.905)
-                target_boxes = self.ocr(
-                    box=box, frame_processor=gf.isolate_text_to_black, match=match, log=True
+                all_names = self.ocr(
+                    box=box, frame_processor=gf.isolate_text_to_black, log=True
                 )
-                if target_boxes:
-                    loc_y = target_boxes[0].y + target_boxes[0].height
+                matched = [b for b in all_names if name_matches(getattr(b, "name", ""))]
+                if matched:
+                    loc_y = matched[0].y + matched[0].height
                     boxes = self._find_selectable_target()
                     for box in boxes:
                         if loc_y > box.y and loc_y < box.y + box.height:
-                            target_box = target_boxes[0]
+                            target_box = matched[0]
                             break
                     if target_box:
                         self.log_info(f"找到目标 {target_box}")
                     else:
-                        self.log_warning(f"找到目标 {target_boxes[0]} 但不可用")
+                        self.log_warning(f"找到目标 {matched[0]} 但不可用")
                     break
                 if self.scroll_and_is_end(0.8391, 0.5333, -19, snap_box):
                     self.log_info(f"已滚动 {page + 1} 次, 判断达到末页")
