@@ -22,7 +22,7 @@ from ok import TaskDisabledException
 from src.Labels import Labels
 from src.tasks.BaseNTETask import BaseNTETask
 from src.tasks.NTEOneTimeTask import NTEOneTimeTask
-from src.ui.task_icons import Icon
+from src.ui.icons import task_icon
 
 # ── 插件自带模板加载 (同 logistics_center 插件, assets 裁自 1920x1080) ──
 _TEMPLATE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -105,7 +105,7 @@ class TankIdleTask(NTEOneTimeTask, BaseNTETask):
         super().__init__(*args, **kwargs)
         self.name = "征途坦荡挂机"
         self.group_name = "活动"
-        self.group_icon = Icon.GAME
+        self.group_icon = task_icon("fight")
         self.description = (
             "自动进入征途坦荡坦克大战对局, 对局内不驾驶不开炮, 挂机到对局结束拿完成奖励"
         )
